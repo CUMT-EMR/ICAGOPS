@@ -68,7 +68,7 @@ optim_D = optim.Adam(D.parameters(), lr=5e-5, betas=(0.5,0.9))
 
 criterion = nn.BCEWithLogitsLoss()
 
-txt_dir = r'./data1/data/'
+txt_dir = r'./data/'
 data = getData(txt_dir)
 data = np.array(data)
 
