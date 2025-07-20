@@ -1,0 +1,59 @@
+import numpy as np
+import pandas as pd
+from sklearn.metrics import f1_score, accuracy_score, roc_auc_score, confusion_matrix, log_loss
+from sklearn.model_selection import train_test_split
+from xgboost import DMatrix, train as xgb_train
+from ReadDataCNN import getData
+import os
+
+os.makedirs('./tmpXGB/', exist_ok=True)
+txt_dir = r'./data/alldata/'
+EMR_feature_data,AE_feature_data,GAS_feature_data,EMR_feature_pad_data,AE_feature_pad_data,GAS_feature_pad_data,EMR_label_data,AE_label_data,GAS_label_data,EMR_feature_data_len,AE_feature_data_len,GAS_feature_data_len=getData(txt_dir)
+X_train_val, X_test, y_train_val, y_test = train_test_split(EMR_feature_pad_data, EMR_label_data, test_size=0.1, random_state=42)
+X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=0.1, random_state=42)
+dtrain = DMatrix(X_train, label=y_train)
+dval = DMatrix(X_val, label=y_val)
+dtest = DMatrix(X_test, label=y_test)
+params = {
+    'objective': 'binary:logistic',
+    'eval_metric': 'logloss',
+    'learning_rate': 0.05,
+    'max_depth': 6,
+    'verbosity': 0
+}
+loss_records = []
+test_metrics_records = []
+# different num_boost_round evaluation
+for i in range(1, 501):
+    evals_result = {}
+    bst = xgb_train(params, dtrain, num_boost_round=i, evals=[(dtrain, 'train'), (dval, 'val')],
+                    evals_result=evals_result, verbose_eval=False)
+    
+    train_loss = evals_result['train']['logloss'][-1]
+    val_loss = evals_result['val']['logloss'][-1]
+    y_pred_proba = bst.predict(dtest)
+    y_pred_label = (y_pred_proba > 0.5).astype(int)
+    acc = accuracy_score(y_test, y_pred_label)
+    f1 = f1_score(y_test, y_pred_label)
+    auc = roc_auc_score(y_test, y_pred_proba)
+    cm = confusion_matrix(y_test, y_pred_label).tolist()
+    loss_records.append({
+        'round': i,
+        'train_logloss': train_loss,
+        'val_logloss': val_loss
+    })
+    test_metrics_records.append({
+        'round': i,
+        'Accuracy': acc,
+        'F1': f1,
+        'AUC': auc,
+        'ConfusionMatrix': str(cm)
+    })
+
+    if i % 50 == 0 or i == 1:
+        print(f"Finished round {i}: acc={acc:.4f}, f1={f1:.4f}, auc={auc:.4f}")
+loss_df = pd.DataFrame(loss_records)
+loss_df.to_excel('./tmpXGB/EMRxgb_loss_per_round.xlsx', index=False)
+metrics_df = pd.DataFrame(test_metrics_records)
+metrics_df.to_excel('./tmpXGB/EMRxgb_test_metrics_per_round.xlsx', index=False)
+
