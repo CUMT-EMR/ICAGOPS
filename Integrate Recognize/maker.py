@@ -82,6 +82,7 @@ def train_maker(X, Y):
     res = minimize(loss_fn, theta0, bounds=bounds, method='L-BFGS-B')
     return unpack(res.x)
 
+
 if __name__ == "__main__":
 
     df_X_hist = pd.read_excel('proboutput.xlsx',usecols=[1,2,3])[:790]
