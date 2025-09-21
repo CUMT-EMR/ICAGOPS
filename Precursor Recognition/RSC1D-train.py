@@ -10,13 +10,13 @@ from torch.optim.lr_scheduler import StepLR
 import matplotlib.pyplot as plt
 import time
 from ReadDataCNN import getData
-from RSC1D import RSC1D
+from RSC_1D import RSC1D
 from copy import deepcopy
 from sklearn.preprocessing import MinMaxScaler
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print(device)
 seq_len = 1024
-batch_size = 32
+batch_size = 16
 kernel_size = 8
 stride = 16
 n_block = 3
@@ -24,25 +24,17 @@ downsample_gap = 6
 increasefilter_gap = 6
 
 class Model(nn.Module):
-    def __init__(self):
-        super(Model,self).__init__()
-        self.RSC1D = RSC1D(
-        in_ch=1, 
-        base_ch=64,
-        k_size=kernel_size, 
-        stride=stride, 
-        groups=2, 
-        blocks=n_block, 
-        num_cls=5, 
-        ds_gap=downsample_gap, 
-        ch_up=increasefilter_gap, 
-        use_dropout=True).to(device)
-        self.linear2 = nn.Linear(5,1).to(device)
-    def forward(self,data):
-        data = torch.unsqueeze(data,dim=1)
-        cnndata=self.RSC1D(data)
-        tgt = self.linear2(cnndata)
-        return torch.squeeze(tgt)
+    def __init__(self, seq_len=1024, n_classes=1, hidden_channels=512, num_layers=2):
+        super().__init__()
+        self.encoder = RSC1D(1, hidden_channels, num_layers=num_layers, seq_len=seq_len).to(device)
+        self.pool = nn.AdaptiveAvgPool1d(1).to(device)  # 全局平均池化 (B, C, 1)
+        self.fc = nn.Linear(hidden_channels, n_classes).to(device)
+
+    def forward(self, x):
+        x = x.unsqueeze(1)   # (B, 1, T)
+        x = self.encoder(x)  # (B, C, T)
+        x = self.pool(x).squeeze(-1)  # (B, C)
+        return  torch.squeeze(self.fc(x))    # (B, n_classes)
     
 
 class DataHandler(Dataset):
@@ -82,8 +74,8 @@ prediction_train_loss = []
 criterion = nn.BCEWithLogitsLoss().to(device)
 def train(trans_dataloader,test_validation,iter):
     model = Model()
-    optim_fnc = optim.Adam(model.parameters(),lr=1e-4,weight_decay=0.001)
-    scheduler_1 = StepLR(optim_fnc, step_size=500, gamma=0.8)
+    optim_fnc = optim.Adam(model.parameters(),lr=5e-5,weight_decay=0.001)
+    scheduler_1 = StepLR(optim_fnc, step_size=800, gamma=0.8)
     criterion = nn.BCEWithLogitsLoss().to(device)
     loss_data=[]
     opti_rate =   []
@@ -116,14 +108,13 @@ def train(trans_dataloader,test_validation,iter):
             print('Epoch {},  Totle Loss {}'.format(echop, total_loss) )
             prediction(test_validation,model,echop,'test_validation',iter)
         if echop%10==0:
-            torch.save(model,'./model/RSC1D_model_'+str(echop)+".pt")
+            torch.save(model,'./model/ResConv_model_'+str(echop)+".pt")
     result = pd.DataFrame({"ecoph":np.arange(0,Echop),"loss":loss_data})
     result_vali_loss = pd.DataFrame({"ecoph":np.arange(0,Echop),"loss":prediction_vali_loss})
-    result_train_loss = pd.DataFrame({"ecoph":np.arange(0,Echop),"loss":prediction_train_loss})
     result_opti = pd.DataFrame({"ecoph":np.arange(0,Echop+1),"opti_step":opti_rate})
-    data_result_write = pd.ExcelWriter("./trainlossAE/{}_result_loss_1000_RSC1D.xlsx".format(iter))
-    data_testvali_result_write = pd.ExcelWriter("./trainlossAE/{}_result_vali_loss_RSC1D.xlsx".format(iter))
-    data_optostep_result_write = pd.ExcelWriter("./trainlossAE/{}_result_train_opti_step_RSC1D.xlsx".format(iter))
+    data_result_write = pd.ExcelWriter("./trainlossAE/{}_result_loss_1000_ResConv.xlsx".format(iter))
+    data_testvali_result_write = pd.ExcelWriter("./trainnewResConv/{}_result_vali_loss_ResConv.xlsx".format(iter))
+    data_optostep_result_write = pd.ExcelWriter("./trainnewResConv/{}_result_train_opti_step_ResConv.xlsx".format(iter))
     result.to_excel(data_result_write)
     result_vali_loss.to_excel(data_testvali_result_write)
     result_opti.to_excel(data_optostep_result_write)
@@ -163,7 +154,7 @@ def prediction(test_loader,model,echop,name,iter):
             print('prediction_train_loss Totle Loss {}'.format(total_loss) )
     result = pd.DataFrame({"wasi_predictions":torch.Tensor(wasi_predictions).cpu(),
                            "wasi_target":torch.Tensor(wasi_target).cpu()})
-    data_result_write = pd.ExcelWriter('./tmpcnnAE/{}_'.format(iter)+name+"_result_test_new_"+str(echop)+"_RSC1D.xlsx")
+    data_result_write = pd.ExcelWriter('./tmpResConvAE/{}_'.format(iter)+name+"_result_test_new_"+str(echop)+"_ResConv.xlsx")
     result.to_excel(data_result_write)
     data_result_write.close()
 scaler = MinMaxScaler() 
@@ -182,9 +173,7 @@ def main():
     return trans_dataloader,validation_dataloader,test_dataloader,test_validation
     
 if __name__=='__main__':
-    for i in range(10):
-        prediction_vali_loss = []
-        prediction_train_loss = []
-        trans_dataloader,validation_dataloader,test_dataloader,test_validation = main()
-        train(trans_dataloader,test_dataloader,iter=i)
-    
+    prediction_vali_loss = []
+    prediction_train_loss = []
+    trans_dataloader,validation_dataloader,test_dataloader,test_validation = main()
+    train(trans_dataloader,test_dataloader,iter=0)
