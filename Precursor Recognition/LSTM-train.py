@@ -13,7 +13,6 @@ from ReadDataCNN import getData
 from copy import deepcopy
 from sklearn.preprocessing import MinMaxScaler
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-print(device)
 seq_len = 1024
 batch_size = 32
 model_name = "LSTM"
